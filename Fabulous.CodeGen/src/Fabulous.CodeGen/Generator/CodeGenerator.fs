@@ -62,12 +62,18 @@ module CodeGenerator =
         if immediateMembers.Length > 0 then
             w.printfn ""
             for m in immediateMembers do
-                w.printfn "        let attribCount = match %s with Some _ -> attribCount + 1 | None -> attribCount" m.Name
+                if m.Name = "extraAttributes" then
+                    w.printfn "        let attribCount = match %s with Some extraAttributes -> attribCount + extraAttributes.Length | None -> attribCount" m.Name
+                else
+                    w.printfn "        let attribCount = match %s with Some _ -> attribCount + 1 | None -> attribCount" m.Name
+            
+            w.printfn "        let extraCount = match extraAttributes with Some extraAttributes -> extraAttributes.Length | None -> 0"
             w.printfn ""
 
+        
         match data.BaseName with 
         | None ->
-            w.printfn "        let attribBuilder = AttributesBuilder(attribCount)"
+            w.printfn "        let attribBuilder = AttributesBuilder(attribCount, extraCount)"
         | Some nameOfBaseCreator ->
             let baseMemberNewLine = "\n                                              " + String.replicate nameOfBaseCreator.Length " " + " "
             let baseMembers =
@@ -284,7 +290,7 @@ module CodeGenerator =
             w.printfn ""
             w.printfn "        let attribBuilder = ViewBuilders.Build%s(0%s)" data.Name membersForBuild
             w.printfn ""
-            w.printfn "        ViewElement.Create<%s>(ViewBuilders.Create%s, (fun registry prevOpt curr target -> ViewBuilders.Update%s(registry, prevOpt, curr, target)), attribBuilder)" data.FullName data.Name data.Name
+            w.printfn "        ViewElement.Create<%s>(ViewBuilders.Create%s, (fun registry prevOpt curr target -> ViewBuilders.Update%s(registry, prevOpt, curr, target)), attribBuilder, extraAttributes)" data.FullName data.Name data.Name
             w.printfn ""
 
 

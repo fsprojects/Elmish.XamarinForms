@@ -37,10 +37,12 @@ type AttributeKey<'T> internal (keyv: int) =
 
 
 /// A description of a visual element
-type AttributesBuilder (attribCount: int) = 
+type AttributesBuilder (attribCount: int, extraCount: int) = 
+    
+    let mutable count = extraCount
+    let mutable attribs = Array.zeroCreate<KeyValuePair<int, obj>>(attribCount)
 
-    let mutable count = 0
-    let mutable attribs = Array.zeroCreate<KeyValuePair<int, obj>>(attribCount)    
+    new (attribCount) = AttributesBuilder(attribCount, 0)
 
     /// Get the attributes of the visual element
     [<DebuggerBrowsable(DebuggerBrowsableState.RootHidden)>]
@@ -112,9 +114,11 @@ type ViewRef<'T when 'T : not struct>() =
 /// A description of a visual element
 type ViewElement internal (targetType: Type, create: (unit -> obj), update: (ViewElement voption -> ViewElement -> obj -> unit), attribs: KeyValuePair<int,obj>[]) = 
     
+    let extraAttribsCounter = ref 0
+
     new (targetType: Type, create: (unit -> obj), update: (ViewElement voption -> ViewElement -> obj -> unit), attribsBuilder: AttributesBuilder) =
         ViewElement(targetType, create, update, attribsBuilder.Close())
-
+    
     static member Create
             (create: (unit -> 'T),
              update: (Dictionary<int, ViewElement voption -> ViewElement -> obj -> unit> -> ViewElement voption -> ViewElement -> 'T -> unit),
@@ -125,6 +129,24 @@ type ViewElement internal (targetType: Type, create: (unit -> obj), update: (Vie
             (fun prev curr target -> update (Dictionary()) prev curr (unbox target)),
             attribsBuilder.Close()
         )
+
+    static member Create
+            (create: (unit -> 'T),
+             update: (Dictionary<int, ViewElement voption -> ViewElement -> obj -> unit> -> ViewElement voption -> ViewElement -> 'T -> unit),
+             attribsBuilder: AttributesBuilder,
+             extraAttributes: (ViewElement -> ViewElement) list option) =
+        let viewElement =
+            ViewElement(
+                typeof<'T>, (create >> box),
+                (fun prev curr target -> update (Dictionary()) prev curr (unbox target)),
+                attribsBuilder.Close()
+            )
+        
+        match extraAttributes with
+        | Some extraAttributes when extraAttributes.Length > 0 ->
+            viewElement.WithExtraAttributes(extraAttributes)
+        | _ ->
+            viewElement
 
     static member val CreatedAttribKey : AttributeKey<obj -> unit> = AttributeKey<_>("Created")
     static member val RefAttribKey : AttributeKey<ViewRef> = AttributeKey<_>("Ref")
@@ -184,7 +206,7 @@ type ViewElement internal (targetType: Type, create: (unit -> obj), update: (Vie
         target
 
     /// Produce a new visual element with an adjusted attribute
-    member __.WithAttribute(key: AttributeKey<'T>, value: 'T) =
+    member x.WithAttribute(key: AttributeKey<'T>, value: 'T) =
         let duplicateViewElement newAttribsLength attribIndex =
             let attribs2 = Array.zeroCreate newAttribsLength
             Array.blit attribs 0 attribs2 0 attribs.Length
@@ -198,8 +220,18 @@ type ViewElement internal (targetType: Type, create: (unit -> obj), update: (Vie
         | Some i ->
             duplicateViewElement n i // duplicate and replace existing attribute
         | None ->
-            duplicateViewElement (n + 1) n // duplicate and add new attribute
+            if attribs.[!extraAttribsCounter] = Unchecked.defaultof<KeyValuePair<_,_>> then
+              attribs.[!extraAttribsCounter] <- KeyValuePair(key.KeyValue, box value)
+              incr extraAttribsCounter
+              x
+            else          
+              duplicateViewElement (n + 1) n // duplicate and add new attribute
 
+    member x.WithExtraAttributes(extraAttributes: (ViewElement -> ViewElement) list) =
+        if extraAttributes.Length > 0
+        then extraAttributes |> Seq.map (fun apply -> apply x) |> Seq.last
+        else x
+    
     override x.ToString() = sprintf "%s(...)@%d" x.TargetType.Name (x.GetHashCode())
 
 

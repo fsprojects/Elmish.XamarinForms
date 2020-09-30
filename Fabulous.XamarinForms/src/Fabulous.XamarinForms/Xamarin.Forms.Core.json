@@ -32,6 +32,13 @@
           "customAttributeKey": "Fabulous.XamarinForms.ViewExtensions.TagAttribKey",
           "defaultValue": "null",
           "inputType": "obj"
+        },
+        {
+          "source": null,
+          "name": "ExtraAttributes",
+          "canBeUpdated": false,
+          "defaultValue": "null",
+          "inputType": "(ViewElement -> ViewElement) list"
         }
       ],
       "events": [
