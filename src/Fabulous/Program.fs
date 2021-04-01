@@ -35,6 +35,10 @@ type Program<'arg, 'model, 'msg> =
       syncAction: (unit -> unit) -> (unit -> unit)
       debug : bool
       onError : (string * exn) -> unit }
+  
+ type private ViewMsg<'msg> =
+     |Render of 'msg
+     |Completed
 
 /// Starts the Elmish dispatch loop for the page with the given Elmish program
 type ProgramRunner<'arg, 'model, 'msg>(host: IHost, program: Program<'arg, 'model, 'msg>, arg: 'arg) = 
@@ -57,24 +61,7 @@ type ProgramRunner<'arg, 'model, 'msg>(host: IHost, program: Program<'arg, 'mode
         host.SetRootView(rootView)
         newRootElement
 
-    // Start Elmish dispatch loop  
-    let rec processMsg msg = 
-        try
-            let (updatedModel,newCommands) = program.update msg lastModel
-            lastModel <- updatedModel
-            try 
-                updateView updatedModel 
-            with ex ->
-                program.onError ("Unable to update view:", ex)
-            for sub in newCommands do
-                try 
-                    sub dispatch
-                with ex ->
-                    program.onError ("Error executing commands:", ex)
-        with ex ->
-            program.onError ("Unable to process a message:", ex)
-
-    and updateView updatedModel = 
+    let updateView updatedModel =
         match lastViewDataOpt with
         | None -> 
             lastViewDataOpt <- Some viewInfo
@@ -94,12 +81,57 @@ type ProgramRunner<'arg, 'model, 'msg>(host: IHost, program: Program<'arg, 'mode
                 host.SetRootView(pageObj)
 
             lastViewDataOpt <- Some newPageElement
-                      
+    let viewInbox = MailboxProcessor.Start (fun inbox ->
+         let mutable isRendering = false
+         // We use local mutable instead of loop state here because we need a kind of "kill switch" for all events coming after render starts.
+         //If we use message for setting isRendered, this can lead to race conditions and two render processes may start simultaneously.
+         //Mutable variable helps us reset the blocking state immediately, so the next event occured would invoke render if needed.
+         let rec loop (state,hasChanges)  = async{
+             match! inbox.Receive() with
+             | ViewMsg.Render msg when (not isRendering)->
+                 isRendering<-true
+                 /// Here we put an inbox into the "waiting" state and wait for render finishes
+                 Debug.WriteLine "View invoked"
+                 async{
+                     program.syncAction (fun()->updateView msg) ()
+                     isRendering<-false
+                     inbox.Post (Completed)
+                 } |> Async.Start
+                 return! loop (msg,false)
+             | ViewMsg.Completed -> 
+                 /// When we finished render and have "dirty" changes ,we should invoke Render again to be sure to receive actual view
+                 if(hasChanges) then
+                     inbox.Post (Render state)
+                 return! loop (state,hasChanges)
+                 
+             | ViewMsg.Render msg when isRendering->
+                  /// Here we just accumulate changes, no actual rendering happens
+                 return! loop (msg,true)
+         }
+         
+         loop (initialModel,false)      
+          )   
+        // Start Elmish dispatch loop  
+    let processMsg msg = 
+        try
+            let (updatedModel,newCommands) = program.update msg lastModel
+            lastModel <- updatedModel
+            try 
+                 viewInbox.Post (ViewMsg.Render updatedModel)
+            with ex ->
+                program.onError ("Unable to update view:", ex)
+            for sub in newCommands do
+                try 
+                    sub dispatch
+                with ex ->
+                    program.onError ("Error executing commands:", ex)
+        with ex ->
+            program.onError ("Unable to process a message:", ex)                   
     do 
         // Set up the global dispatch function
         ProgramDispatch<'msg>.SetDispatchThunk (processMsg |> program.syncDispatch)
 
-        reset <- (fun () -> updateView lastModel) |> program.syncAction
+        reset <- (fun () -> updateView lastModel  ) |> program.syncAction
 
         Debug.WriteLine "updating the initial view"
 
