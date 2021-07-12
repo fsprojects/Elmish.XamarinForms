@@ -70,7 +70,7 @@ To help you with that, Fabulous comes with its own code generator, called Fabulo
 ### Tawasal - [www.tawasal.ae](https://www.tawasal.ae)
 
 Tawasal is a secure multi-purpose messenger and superapp, offering free voice, text, videoconferencing and lifestyle services to clients around the world.  
-[Learn more about Tawasal](https://fsprojects.github.io/Fabulous/Fabulous.XamarinForms/they-use-fabulous.html#Tawasal)
+[Learn more about Tawasal](https://fsprojects.github.io/Fabulous/Fabulous.XamarinForms/misc-they-use-fabulous.html#tawasal)
 
 ## Credits
 This repository is inspired by [Elmish.WPF](https://github.com/Prolucid/Elmish.WPF), [Elmish.Forms](https://github.com/dboris/elmish-forms) and [elmish](https://github.com/elmish/elmish).
